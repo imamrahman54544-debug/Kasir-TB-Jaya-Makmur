@@ -702,14 +702,15 @@
 
         const updateCartUI = () => {
             const container = document.getElementById('cart-list');
-            const emptyMsg = document.getElementById('empty-cart-msg');
 
             if (cart.length === 0) {
-                container.innerHTML = '';
-                container.appendChild(emptyMsg);
-                emptyMsg.style.display = 'block';
+                container.innerHTML = `
+                    <div class="text-center text-muted mt-5" id="empty-cart-msg">
+                        <i class="bi bi-cart-x" style="font-size: 3rem;"></i>
+                        <p class="mt-2">Keranjang masih kosong</p>
+                    </div>
+                `;
             } else {
-                emptyMsg.style.display = 'none';
                 container.innerHTML = cart.map(item => `
                     <div class="cart-item">
                         <div style="flex: 1; min-width: 0;">
