@@ -496,28 +496,28 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // MODE SIMULASI (Sesuai Permintaan Prompt)
-        const isSimulation = true; 
+        // MODE SIMULASI DIMATIKAN
+        const isSimulation = false; 
         
         let db;
-        if (!isSimulation) {
-            // Konfigurasi Asli jika ingin di-deploy sungguhan (User harus mengganti ini)
-            const firebaseConfig = {
-                apiKey: "API_KEY",
-                authDomain: "PROJECT_ID.firebaseapp.com",
-                projectId: "PROJECT_ID",
-                storageBucket: "PROJECT_ID.appspot.com",
-                messagingSenderId: "SENDER_ID",
-                appId: "APP_ID"
-            };
-            const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-        }
+        // Konfigurasi Asli Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyC-kqUht3jnZahMdlIsxt_-mJfcYHioNng",
+            authDomain: "kasir-tb-makmur.firebaseapp.com",
+            projectId: "kasir-tb-makmur",
+            storageBucket: "kasir-tb-makmur.firebasestorage.app",
+            messagingSenderId: "97432374552",
+            appId: "1:97432374552:web:3d8f670dce870fb733626d"
+        };
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
 
-        // DATABASE DUMMY (Simulation Mode)
+        // DATABASE DUMMY (Akan digantikan oleh data asli dari Firebase jika online)
         let dbDummyTransactions = [];
+        // Kita tidak memakai localStorage lagi untuk utama jika tidak simulasi, 
+        // tapi biarkan jika ingin fallback offline. Untuk sekarang fokus ke Firebase.
         if(localStorage.getItem('bangunpos_history')) {
             dbDummyTransactions = JSON.parse(localStorage.getItem('bangunpos_history'));
         }
@@ -786,7 +786,8 @@
                 total: finalTotals.total,
                 payment: payment,
                 change: change,
-                timestamp: dateStr,
+                timestamp: dateStr, // Simpan format string untuk display gampang
+                serverTime: serverTimestamp(), // Waktu real di server
                 cashier: "Admin Toko"
             };
 
@@ -794,14 +795,28 @@
 
             try {
                 if (isSimulation) {
-                    // Simpan ke array dummy & localstorage
                     dbDummyTransactions.unshift(transactionData);
                     localStorage.setItem('bangunpos_history', JSON.stringify(dbDummyTransactions));
-                    // Simulasi delay jaringan
                     await new Promise(r => setTimeout(r, 800));
                 } else {
-                    // Simpan ke Firestore asli
-                    await addDoc(collection(db, "transactions"), transactionData);
+                    // Simpan ke Firestore asli dengan Fallback LocalStorage jika API belum aktif
+                    try {
+                        await addDoc(collection(db, "transactions"), transactionData);
+                    } catch (firestoreError) {
+                        console.error("Firestore Error:", firestoreError);
+                        Swal.fire({
+                            title: 'Peringatan Firestore',
+                            text: 'Gagal terhubung ke Database (API belum aktif/Offline). Transaksi disimpan ke lokal sementara.',
+                            icon: 'warning',
+                            toast: true,
+                            position: 'top-end',
+                            timer: 4000,
+                            showConfirmButton: false
+                        });
+                        // Fallback simpan ke local storage
+                        dbDummyTransactions.unshift(transactionData);
+                        localStorage.setItem('bangunpos_history', JSON.stringify(dbDummyTransactions));
+                    }
                 }
 
                 endLoading();
@@ -843,7 +858,7 @@
             receiptModal.hide();
             Swal.fire({
                 title: 'Berhasil!',
-                text: 'Transaksi selesai.',
+                text: 'Transaksi selesai & tersimpan di Firebase.',
                 icon: 'success',
                 timer: 1500,
                 showConfirmButton: false
@@ -872,6 +887,36 @@
                 </tr>
             `).join('');
         };
+
+        // Memuat riwayat dari Firestore secara Real-time dengan Fallback
+        const loadHistoryFromFirebase = () => {
+            if (isSimulation) return;
+            
+            const q = query(collection(db, "transactions"), orderBy("serverTime", "desc"));
+            onSnapshot(q, (snapshot) => {
+                dbDummyTransactions = [];
+                snapshot.forEach((doc) => {
+                    dbDummyTransactions.push(doc.data());
+                });
+                renderHistory();
+            }, (error) => {
+                console.error("Error loading history: ", error);
+                
+                // Tampilkan pesan error dan beralih ke Mode Offline Lokal
+                Swal.fire({
+                    title: 'Koneksi Database Gagal',
+                    text: 'Cloud Firestore belum diaktifkan di project Firebase. Aplikasi berjalan di Mode Lokal sementara.',
+                    icon: 'warning'
+                });
+                
+                // Fallback memuat data dari localStorage
+                if(localStorage.getItem('bangunpos_history')) {
+                    dbDummyTransactions = JSON.parse(localStorage.getItem('bangunpos_history'));
+                }
+                renderHistory();
+            });
+        };
+
 
         // Easter Egg: Hidden Admin Menu (Klik 5x pada Logo)
         let clickCount = 0;
@@ -909,7 +954,13 @@
         window.onload = () => {
             renderCategories();
             renderProducts();
-            renderHistory();
+            
+            if (isSimulation) {
+               renderHistory();
+            } else {
+               loadHistoryFromFirebase();
+            }
+            
             document.getElementById('search-input').focus();
         };
     </script>
